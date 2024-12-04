@@ -1,4 +1,5 @@
 import numpy as np
+from skimage import color
 
 from ..util.dtype import dtype_range, dtype_limits
 from .._shared import utils
@@ -12,6 +13,7 @@ __all__ = [
     'adjust_gamma',
     'adjust_log',
     'adjust_sigmoid',
+    'apply_vlight',
 ]
 
 
@@ -682,6 +684,67 @@ def adjust_gamma(image, gamma=1, gain=1):
         scale = float(dtype_limits(image, True)[1] - dtype_limits(image, True)[0])
 
         out = (((image / scale) ** gamma) * scale * gain).astype(dtype)
+
+    return out
+
+
+def apply_vlight_u8(image, v=0.5):
+    """LUT based implementation of VLight Low-Light Enhancement Algorithm (PhyCV)."""
+    b = 1 / (5 * v + 0.05)
+    G = 1 - v**2
+
+    pixel_values = np.linspace(0, 1, 256, dtype=np.float32)
+    lut_values = np.arctan2(-G * (pixel_values + b), pixel_values)
+    lut_values = np.interp(
+        lut_values, (lut_values.min(), lut_values.max()), (0, 255)
+    ).astype(np.uint8)
+    img_hsv = (color.rgb2hsv(image) * 255).astype(np.uint8)
+    img_hsv[:, :, 2] = lut_values[img_hsv[:, :, 2]]
+
+    return (color.hsv2rgb(img_hsv) * 255).astype(np.uint8)
+
+
+def apply_vlight(image, v=0.5):
+    """Performs VLight Low-Light Enhancement Algorithm (PhyCV) on the input image.
+
+    Also known as Power Law Transform.
+    https://link.springer.com/article/10.1007/s11554-024-01532-7
+
+    Parameters
+    ----------
+    image : ndarray
+        Input image.
+    v : float, optional
+        Single parameter, [0, 1). 0 no enhancement, 0.99 largest enhancement
+
+    Returns
+    -------
+    out : ndarray
+        VLight output image.
+    """
+
+    if (v < 0) or (v >= 1):
+        raise ValueError("v should be: [0, 1)")
+
+    dtype = image.dtype.type
+
+    if dtype is np.uint8:
+        out = apply_vlight_u8(image, v)
+    else:
+        _assert_non_negative(image)
+        b = 1 / (5 * v + 0.05)
+        G = 1 - v**2
+        scale = float(dtype_limits(image, True)[1] - dtype_limits(image, True)[0])
+        image_normalized = image / scale
+        img_hsv = color.rgb2hsv(image_normalized)
+        vlight_input = img_hsv[:, :, 2]
+        vlight_phase = np.arctan2(-G * (vlight_input + b), vlight_input)
+        vlight_phase_norm = (vlight_phase - vlight_phase.min()) / (
+            vlight_phase.max() - vlight_phase.min()
+        )
+        img_hsv[:, :, 2] = vlight_phase_norm
+        img_rgb = color.hsv2rgb(img_hsv)
+        out = (img_rgb * scale).astype(image.dtype)
 
     return out
 
