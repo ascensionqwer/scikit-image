@@ -707,7 +707,6 @@ def apply_vlight_u8(image, v=0.5):
 def apply_vlight(image, v=0.5):
     """Performs VLight Low-Light Enhancement Algorithm (PhyCV) on the input image.
 
-    Also known as Power Law Transform.
     https://link.springer.com/article/10.1007/s11554-024-01532-7
 
     Parameters
